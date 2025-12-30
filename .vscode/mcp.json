@@ -1,0 +1,7 @@
+{
+  "servers": {
+    "beaconchain-docs": {
+      "url": "https://docs.beaconcha.in/mcp"
+    }
+  }
+}

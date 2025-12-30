@@ -1,0 +1,65 @@
+openapi: 3.0.3
+info:
+  title: validator-dashboard
+  version: 0.1.0
+servers:
+  - url: http://localhost:8080
+paths:
+  /validator:
+    post:
+      summary: Get validator overview, rewards and performance
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                validatorId:
+                  type: array
+                  items:
+                    type: integer
+      responses:
+        '200':
+          description: Batch response with successes and errors
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  successes:
+                    type: object
+                    additionalProperties:
+                      $ref: '#/components/schemas/ValidatorResponse'
+                  errors:
+                    type: object
+                    additionalProperties:
+                      type: string
+components:
+  schemas:
+    ValidatorResponse:
+      type: object
+      properties:
+        overview:
+          type: object
+          properties:
+            id: {type: integer}
+            slashed: {type: boolean}
+            status: {type: string}
+            withdrawal_credentials_type: {type: string}
+            withdrawal_credentials: {type: string}
+            activation_epoch: {type: integer}
+            exit_epoch: {type: integer}
+            current_balance_raw: {type: string}
+            current_balance_human: {type: string}
+            online: {type: boolean}
+            fetched_at: {type: string, format: date-time}
+        rewards:
+          type: object
+          properties:
+            total_raw: {type: string}
+            total_human: {type: string}
+        performance:
+          type: object
+          properties:
+            beacon_score: {type: number}
