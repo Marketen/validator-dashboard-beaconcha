@@ -5,11 +5,13 @@ A read-only public REST API that consumes the Beaconcha v2 API and aggregates va
 ## Features
 
 - **Single Endpoint**: `POST /validator` to fetch aggregated data for up to 100 validators
+- **Multi-chain Support**: Supports `mainnet` and `hoodi` chains
 - **Rate Limiting**: 
-  - Global rate limiting for Beaconcha API (1 req/sec)
+  - Adaptive rate limiting using Beaconcha response headers
   - Per-IP rate limiting for abuse prevention (configurable)
 - **Caching**: In-memory cache with configurable TTL (15-30 minutes)
 - **Abuse Prevention**: Request validation, body size limits, and rate limiting
+- **Cursor-based Pagination**: Automatically fetches all pages from Beaconcha v2 API
 
 ## Quick Start
 
@@ -69,7 +71,8 @@ POST /validator
 Content-Type: application/json
 
 {
-  "validatorIds": [12345, 67890]
+  "validatorIds": [12345, 67890],
+  "chain": "mainnet"
 }
 ```
 
@@ -79,6 +82,7 @@ Content-Type: application/json
   - Maximum: 100 validators
   - Values must be unique
   - Values must be non-negative
+- `chain`: Required string, either `"mainnet"` or `"hoodi"`
 
 **Response:**
 
@@ -93,7 +97,7 @@ Content-Type: application/json
         "address": "0x..."
       },
       "activationEpoch": 290297,
-      "exitEpoch": 9223372036854776000,
+      "exitEpoch": 0,
       "currentBalance": 32014494648,
       "effectiveBalance": 32000000000,
       "online": true
@@ -209,29 +213,36 @@ Configuration is done via environment variables:
 ### Design Decisions
 
 1. **Rate Limiting Strategy**
-   - Global rate limiter using `golang.org/x/time/rate` for Beaconcha API calls
+   - Adaptive rate limiting using Beaconcha response headers (`ratelimit-remaining`, `ratelimit-reset`)
+   - Falls back to token bucket rate limiter using `golang.org/x/time/rate`
    - Per-IP rate limiting for incoming requests to prevent abuse
    - Both are configurable via environment variables
 
-2. **Caching**
+2. **Pagination**
+   - Cursor-based pagination for the validators endpoint (page size: 10)
+   - Automatically fetches all pages until no `next_cursor` is returned
+   - Each page request respects rate limiting
+
+3. **Caching**
    - Simple in-memory cache with TTL
-   - Cache key is derived from sorted validator IDs for consistency
+   - Cache key is derived from sorted validator IDs and chain for consistency
    - Automatic cleanup of expired entries
    - `GetOrSet` pattern to prevent thundering herd
 
-3. **Beaconcha Client**
+4. **Beaconcha Client**
    - Encapsulated behind a dedicated client layer
-   - All requests wait for the global rate limiter before executing
+   - All requests wait for the adaptive rate limiter before executing
+   - Parses rate limit headers from responses to optimize request timing
    - Strongly-typed request/response models
 
-4. **Middleware Stack**
+5. **Middleware Stack**
    - Max body size (1MB) - prevents large payload attacks
    - Rate limiting - per-IP abuse prevention
    - CORS - allows cross-origin requests
    - Logging - structured JSON logs
    - Recovery - graceful panic handling
 
-5. **Testability**
+6. **Testability**
    - Interfaces and dependency injection for testable components
    - Unit tests for core functionality
    - Components can be easily mocked for integration tests

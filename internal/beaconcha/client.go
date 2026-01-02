@@ -37,77 +37,97 @@ func NewClient(baseURL, apiKey string, rateLimiter *ratelimiter.GlobalRateLimite
 }
 
 // GetValidators fetches validator overview data for the given indices.
-// Uses POST /api/v2/ethereum/validators
-func (c *Client) GetValidators(ctx context.Context, validatorIds []int) ([]models.BeaconchainValidatorData, error) {
+// Uses POST /api/v2/ethereum/validators with cursor-based pagination.
+func (c *Client) GetValidators(ctx context.Context, chain string, validatorIds []int) ([]models.BeaconchainValidatorData, error) {
 	if len(validatorIds) == 0 {
 		return nil, nil
 	}
 
-	// Wait for rate limiter
-	if err := c.rateLimiter.Wait(ctx); err != nil {
-		return nil, fmt.Errorf("rate limiter: %w", err)
+	var allData []models.BeaconchainValidatorData
+	cursor := ""
+
+	for {
+		// Wait for rate limiter (adaptive, respects rate limit headers)
+		if err := c.rateLimiter.WaitAdaptive(ctx); err != nil {
+			return nil, fmt.Errorf("rate limiter: %w", err)
+		}
+
+		reqBody := models.BeaconchainValidatorsRequest{
+			Chain: chain,
+			Validator: models.BeaconchainValidatorSelector{
+				ValidatorIdentifiers: validatorIds,
+			},
+			PageSize: 10, // Max allowed by Beaconcha API
+			Cursor:   cursor,
+		}
+
+		bodyBytes, err := json.Marshal(reqBody)
+		if err != nil {
+			return nil, fmt.Errorf("marshal request: %w", err)
+		}
+
+		url := fmt.Sprintf("%s/api/v2/ethereum/validators", c.baseURL)
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(bodyBytes))
+		if err != nil {
+			return nil, fmt.Errorf("create request: %w", err)
+		}
+
+		c.addHeaders(req)
+		req.Header.Set("Content-Type", "application/json")
+
+		slog.Debug("beaconcha request", "method", "POST", "endpoint", "validators", "cursor", cursor)
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("http request: %w", err)
+		}
+
+		// Update rate limiter with response headers
+		c.rateLimiter.UpdateFromHeaders(ratelimiter.ParseRateLimitHeaders(resp))
+
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return nil, fmt.Errorf("read response: %w", err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			slog.Error("beaconcha error response", "status", resp.StatusCode, "body", string(body))
+			return nil, fmt.Errorf("beaconcha returned status %d: %s", resp.StatusCode, string(body))
+		}
+
+		var response models.BeaconchainValidatorsResponse
+		if err := json.Unmarshal(body, &response); err != nil {
+			return nil, fmt.Errorf("decode response: %w", err)
+		}
+
+		allData = append(allData, response.Data...)
+
+		// Check if there are more pages
+		if response.Paging == nil || response.Paging.NextCursor == "" {
+			break
+		}
+		cursor = response.Paging.NextCursor
 	}
 
-	reqBody := models.BeaconchainValidatorsRequest{
-		Validator: models.BeaconchainValidatorSelector{
-			ValidatorIdentifiers: validatorIds,
-		},
-	}
-
-	bodyBytes, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("marshal request: %w", err)
-	}
-
-	url := fmt.Sprintf("%s/api/v2/ethereum/validators", c.baseURL)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(bodyBytes))
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
-
-	c.addHeaders(req)
-	req.Header.Set("Content-Type", "application/json")
-
-	slog.Debug("beaconcha request", "method", "POST", "endpoint", "validators")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("http request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		slog.Error("beaconcha error response", "status", resp.StatusCode, "body", string(body))
-		return nil, fmt.Errorf("beaconcha returned status %d: %s", resp.StatusCode, string(body))
-	}
-
-	var response models.BeaconchainValidatorsResponse
-	if err := json.Unmarshal(body, &response); err != nil {
-		return nil, fmt.Errorf("decode response: %w", err)
-	}
-
-	return response.Data, nil
+	return allData, nil
 }
 
 // GetRewardsAggregate fetches aggregated rewards for validators.
 // Uses POST /api/v2/ethereum/validators/rewards-aggregate
-func (c *Client) GetRewardsAggregate(ctx context.Context, validatorIds []int) (*models.BeaconchainRewardsAggregateResponse, error) {
+func (c *Client) GetRewardsAggregate(ctx context.Context, chain string, validatorIds []int) (*models.BeaconchainRewardsAggregateResponse, error) {
 	if len(validatorIds) == 0 {
 		return nil, nil
 	}
 
-	// Wait for rate limiter
-	if err := c.rateLimiter.Wait(ctx); err != nil {
+	// Wait for rate limiter (adaptive, respects rate limit headers)
+	if err := c.rateLimiter.WaitAdaptive(ctx); err != nil {
 		return nil, fmt.Errorf("rate limiter: %w", err)
 	}
 
 	reqBody := models.BeaconchainRewardsAggregateRequest{
+		Chain: chain,
 		Validator: models.BeaconchainValidatorSelector{
 			ValidatorIdentifiers: validatorIds,
 		},
@@ -139,6 +159,9 @@ func (c *Client) GetRewardsAggregate(ctx context.Context, validatorIds []int) (*
 	}
 	defer resp.Body.Close()
 
+	// Update rate limiter with response headers
+	c.rateLimiter.UpdateFromHeaders(ratelimiter.ParseRateLimitHeaders(resp))
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
@@ -159,17 +182,18 @@ func (c *Client) GetRewardsAggregate(ctx context.Context, validatorIds []int) (*
 
 // GetPerformanceAggregate fetches aggregated performance metrics for validators.
 // Uses POST /api/v2/ethereum/validators/performance-aggregate
-func (c *Client) GetPerformanceAggregate(ctx context.Context, validatorIds []int) (*models.BeaconchainPerformanceAggregateResponse, error) {
+func (c *Client) GetPerformanceAggregate(ctx context.Context, chain string, validatorIds []int) (*models.BeaconchainPerformanceAggregateResponse, error) {
 	if len(validatorIds) == 0 {
 		return nil, nil
 	}
 
-	// Wait for rate limiter
-	if err := c.rateLimiter.Wait(ctx); err != nil {
+	// Wait for rate limiter (adaptive, respects rate limit headers)
+	if err := c.rateLimiter.WaitAdaptive(ctx); err != nil {
 		return nil, fmt.Errorf("rate limiter: %w", err)
 	}
 
 	reqBody := models.BeaconchainPerformanceAggregateRequest{
+		Chain: chain,
 		Validator: models.BeaconchainValidatorSelector{
 			ValidatorIdentifiers: validatorIds,
 		},
@@ -200,6 +224,9 @@ func (c *Client) GetPerformanceAggregate(ctx context.Context, validatorIds []int
 		return nil, fmt.Errorf("http request: %w", err)
 	}
 	defer resp.Body.Close()
+
+	// Update rate limiter with response headers
+	c.rateLimiter.UpdateFromHeaders(ratelimiter.ParseRateLimitHeaders(resp))
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {

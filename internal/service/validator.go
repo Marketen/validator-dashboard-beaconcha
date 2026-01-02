@@ -32,7 +32,7 @@ func NewValidatorService(client *beaconcha.Client, cache *cache.Cache) *Validato
 }
 
 // GetValidatorData fetches and aggregates data for the given validator IDs.
-func (s *ValidatorService) GetValidatorData(ctx context.Context, validatorIds []int) (models.ValidatorResponse, error) {
+func (s *ValidatorService) GetValidatorData(ctx context.Context, chain string, validatorIds []int) (models.ValidatorResponse, error) {
 	if len(validatorIds) == 0 {
 		return models.ValidatorResponse{}, nil
 	}
@@ -49,7 +49,7 @@ func (s *ValidatorService) GetValidatorData(ctx context.Context, validatorIds []
 	slog.Debug("cache miss", "key", cacheKey, "validators", len(validatorIds))
 
 	// Fetch data from Beaconcha
-	response, err := s.fetchAndAggregate(ctx, validatorIds)
+	response, err := s.fetchAndAggregate(ctx, chain, validatorIds)
 	if err != nil {
 		return nil, err
 	}
@@ -61,21 +61,21 @@ func (s *ValidatorService) GetValidatorData(ctx context.Context, validatorIds []
 }
 
 // fetchAndAggregate fetches all required data from Beaconcha and aggregates it.
-func (s *ValidatorService) fetchAndAggregate(ctx context.Context, validatorIds []int) (models.ValidatorResponse, error) {
+func (s *ValidatorService) fetchAndAggregate(ctx context.Context, chain string, validatorIds []int) (models.ValidatorResponse, error) {
 	// Fetch validator overview data
-	validators, err := s.beaconchainClient.GetValidators(ctx, validatorIds)
+	validators, err := s.beaconchainClient.GetValidators(ctx, chain, validatorIds)
 	if err != nil {
 		return nil, fmt.Errorf("fetch validators: %w", err)
 	}
 
 	// Fetch aggregated rewards
-	rewards, err := s.beaconchainClient.GetRewardsAggregate(ctx, validatorIds)
+	rewards, err := s.beaconchainClient.GetRewardsAggregate(ctx, chain, validatorIds)
 	if err != nil {
 		return nil, fmt.Errorf("fetch rewards: %w", err)
 	}
 
 	// Fetch aggregated performance
-	performance, err := s.beaconchainClient.GetPerformanceAggregate(ctx, validatorIds)
+	performance, err := s.beaconchainClient.GetPerformanceAggregate(ctx, chain, validatorIds)
 	if err != nil {
 		return nil, fmt.Errorf("fetch performance: %w", err)
 	}
@@ -125,7 +125,7 @@ func (s *ValidatorService) buildOverview(v models.BeaconchainValidatorData) mode
 	if v.LifeCycleEpochs.Exit != nil {
 		exitEpoch = *v.LifeCycleEpochs.Exit
 	} else {
-		exitEpoch = 9223372036854775807 // FAR_FUTURE_EPOCH
+		exitEpoch = 0 // not scheduled for exit or exited
 	}
 
 	// Determine online status

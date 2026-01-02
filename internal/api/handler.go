@@ -74,7 +74,7 @@ func (h *Handler) handleValidator(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch validator data
-	response, err := h.validatorService.GetValidatorData(r.Context(), req.ValidatorIds)
+	response, err := h.validatorService.GetValidatorData(r.Context(), req.Chain, req.ValidatorIds)
 	if err != nil {
 		slog.Error("failed to fetch validator data", "error", err)
 		h.errorResponse(w, http.StatusInternalServerError, "internal_error", "Failed to fetch validator data")
@@ -104,6 +104,14 @@ func (h *Handler) validateValidatorRequest(req models.ValidatorRequest) error {
 			return &ValidationError{Field: "validatorIds", Message: "validator IDs must be unique"}
 		}
 		seen[id] = true
+	}
+
+	// Validate chain
+	if req.Chain == "" {
+		return &ValidationError{Field: "chain", Message: "must be provided and be one of: mainnet, hoodi"}
+	}
+	if req.Chain != "mainnet" && req.Chain != "hoodi" {
+		return &ValidationError{Field: "chain", Message: "must be one of: mainnet, hoodi"}
 	}
 
 	return nil

@@ -22,15 +22,15 @@ func TestValidateValidatorRequest_Valid(t *testing.T) {
 	}{
 		{
 			name:    "single validator",
-			request: models.ValidatorRequest{ValidatorIds: []int{1}},
+			request: models.ValidatorRequest{ValidatorIds: []int{1}, Chain: "mainnet"},
 		},
 		{
 			name:    "multiple validators",
-			request: models.ValidatorRequest{ValidatorIds: []int{1, 2, 3, 4, 5}},
+			request: models.ValidatorRequest{ValidatorIds: []int{1, 2, 3, 4, 5}, Chain: "mainnet"},
 		},
 		{
 			name:    "max validators",
-			request: models.ValidatorRequest{ValidatorIds: makeRange(1, 100)},
+			request: models.ValidatorRequest{ValidatorIds: makeRange(1, 100), Chain: "mainnet"},
 		},
 	}
 
@@ -55,22 +55,22 @@ func TestValidateValidatorRequest_Invalid(t *testing.T) {
 	}{
 		{
 			name:    "empty array",
-			request: models.ValidatorRequest{ValidatorIds: []int{}},
+			request: models.ValidatorRequest{ValidatorIds: []int{}, Chain: "mainnet"},
 			errMsg:  "at least 1",
 		},
 		{
 			name:    "too many validators",
-			request: models.ValidatorRequest{ValidatorIds: makeRange(1, 101)},
+			request: models.ValidatorRequest{ValidatorIds: makeRange(1, 101), Chain: "mainnet"},
 			errMsg:  "at most 100",
 		},
 		{
 			name:    "duplicate validators",
-			request: models.ValidatorRequest{ValidatorIds: []int{1, 2, 1}},
+			request: models.ValidatorRequest{ValidatorIds: []int{1, 2, 1}, Chain: "mainnet"},
 			errMsg:  "unique",
 		},
 		{
 			name:    "negative validator ID",
-			request: models.ValidatorRequest{ValidatorIds: []int{1, -1}},
+			request: models.ValidatorRequest{ValidatorIds: []int{1, -1}, Chain: "mainnet"},
 			errMsg:  "non-negative",
 		},
 	}

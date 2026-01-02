@@ -5,12 +5,20 @@ package models
 type BeaconchainValidatorsRequest struct {
 	Chain     string                       `json:"chain,omitempty"`
 	Validator BeaconchainValidatorSelector `json:"validator"`
+	PageSize  int                          `json:"page_size,omitempty"`
+	Cursor    string                       `json:"cursor,omitempty"`
 }
 
 // BeaconchainValidatorsResponse represents the response from POST /api/v2/ethereum/validators.
 type BeaconchainValidatorsResponse struct {
-	Data  []BeaconchainValidatorData `json:"data"`
-	Range BeaconchainResultRange     `json:"range,omitempty"`
+	Data   []BeaconchainValidatorData `json:"data"`
+	Range  BeaconchainResultRange     `json:"range,omitempty"`
+	Paging *BeaconchainPaging         `json:"paging,omitempty"`
+}
+
+// BeaconchainPaging contains pagination information from the response.
+type BeaconchainPaging struct {
+	NextCursor string `json:"next_cursor,omitempty"`
 }
 
 // BeaconchainValidatorData represents a single validator's data from Beaconcha v2 API.

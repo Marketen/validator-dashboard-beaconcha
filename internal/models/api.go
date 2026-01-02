@@ -6,6 +6,8 @@ type ValidatorRequest struct {
 	// ValidatorIds is a list of unique validator indices.
 	// Minimum: 1, Maximum: 100
 	ValidatorIds []int `json:"validatorIds"`
+	// Chain is the target chain for the request. Allowed values: "mainnet", "hoodi".
+	Chain string `json:"chain"`
 }
 
 // ValidatorResponse is the full response keyed by validator ID.
