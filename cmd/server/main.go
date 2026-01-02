@@ -1,56 +1,95 @@
+// Package main is the entry point for the validator-dashboard API server.
 package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"syscall"
 	"time"
 
-	"github.com/Marketen/validator-dashboard-beaconcha/internal/middleware"
-	"github.com/Marketen/validator-dashboard-beaconcha/internal/validator"
+	"github.com/Marketen/validator-dashboard-beaconcha/internal/api"
+	"github.com/Marketen/validator-dashboard-beaconcha/internal/beaconcha"
+	"github.com/Marketen/validator-dashboard-beaconcha/internal/cache"
+	"github.com/Marketen/validator-dashboard-beaconcha/internal/config"
+	"github.com/Marketen/validator-dashboard-beaconcha/internal/ratelimiter"
+	"github.com/Marketen/validator-dashboard-beaconcha/internal/service"
 )
 
 func main() {
-	addr := ":8080"
-	if v := os.Getenv("ADDR"); v != "" {
-		addr = v
+	// Initialize structured logger
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	}))
+	slog.SetDefault(logger)
+
+	// Load configuration
+	cfg, err := config.Load()
+	if err != nil {
+		slog.Error("failed to load configuration", "error", err)
+		os.Exit(1)
 	}
 
-	mux := http.NewServeMux()
+	slog.Info("starting validator-dashboard",
+		"port", cfg.Port,
+		"beaconcha_base_url", cfg.BeaconchainBaseURL,
+		"cache_ttl", cfg.CacheTTL,
+	)
 
-	// Validator handler
-	mux.Handle("/validator", http.HandlerFunc(validator.Handler))
+	// Initialize global rate limiter for Beaconcha API (1 req/sec)
+	beaconchainRateLimiter := ratelimiter.NewGlobalRateLimiter(cfg.BeaconchainRateLimit)
 
-	// Set chain from env if provided
-	if c := os.Getenv("CHAIN"); c != "" {
-		validator.SetChain(c)
-	}
+	// Initialize cache
+	responseCache := cache.New(cfg.CacheTTL)
 
-	// Wrap with abuse prevention
-	handler := middleware.IPRateLimit(mux)
+	// Initialize Beaconcha client
+	beaconchainClient := beaconcha.NewClient(
+		cfg.BeaconchainBaseURL,
+		cfg.BeaconchainAPIKey,
+		beaconchainRateLimiter,
+		cfg.BeaconchainTimeout,
+	)
 
+	// Initialize validator service
+	validatorService := service.NewValidatorService(beaconchainClient, responseCache)
+
+	// Initialize API handler
+	handler := api.NewHandler(validatorService, cfg)
+
+	// Create HTTP server
 	srv := &http.Server{
-		Addr:    addr,
-		Handler: handler,
+		Addr:         ":" + cfg.Port,
+		Handler:      handler.Router(),
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}
 
+	// Start server in goroutine
 	go func() {
-		log.Printf("server listening on %s", addr)
+		slog.Info("server listening", "addr", srv.Addr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("listen: %v", err)
+			slog.Error("server error", "error", err)
+			os.Exit(1)
 		}
 	}()
 
+	// Graceful shutdown
 	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, os.Interrupt)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
-	log.Println("shutting down server...")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	slog.Info("shutting down server...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+
 	if err := srv.Shutdown(ctx); err != nil {
-		log.Fatalf("server shutdown: %v", err)
+		slog.Error("server shutdown error", "error", err)
+		os.Exit(1)
 	}
+
+	slog.Info("server stopped")
 }

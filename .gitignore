@@ -1,0 +1,31 @@
+# Binaries
+validator-dashboard
+
+# Test coverage
+coverage.out
+coverage.html
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Environment files (keep .env.example)
+.env
+.env.local
+.env.production
+
+# Build artifacts
+/bin/
+/dist/
+
+# Temporary files
+tmp/
