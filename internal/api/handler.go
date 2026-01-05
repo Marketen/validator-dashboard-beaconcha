@@ -10,7 +10,6 @@ import (
 
 	"github.com/Marketen/validator-dashboard-beaconcha/internal/config"
 	"github.com/Marketen/validator-dashboard-beaconcha/internal/models"
-	"github.com/Marketen/validator-dashboard-beaconcha/internal/ratelimiter"
 	"github.com/Marketen/validator-dashboard-beaconcha/internal/service"
 )
 
@@ -18,7 +17,6 @@ import (
 type Handler struct {
 	validatorService *service.ValidatorService
 	config           *config.Config
-	ipRateLimiter    *ratelimiter.IPRateLimiter
 }
 
 // NewHandler creates a new API handler.
@@ -26,7 +24,6 @@ func NewHandler(validatorService *service.ValidatorService, cfg *config.Config) 
 	return &Handler{
 		validatorService: validatorService,
 		config:           cfg,
-		ipRateLimiter:    ratelimiter.NewIPRateLimiter(cfg.IPRateLimitRequests, cfg.IPRateLimitWindow),
 	}
 }
 
@@ -44,7 +41,6 @@ func (h *Handler) Router() http.Handler {
 	handler := h.recoveryMiddleware(mux)
 	handler = h.loggingMiddleware(handler)
 	handler = h.corsMiddleware(handler)
-	handler = h.rateLimitMiddleware(handler)
 	handler = h.maxBodySizeMiddleware(handler, 1<<20) // 1 MB max body size
 
 	return handler
@@ -146,19 +142,6 @@ func (h *Handler) errorResponse(w http.ResponseWriter, status int, errorCode, me
 }
 
 // Middleware functions
-
-// rateLimitMiddleware applies per-IP rate limiting.
-func (h *Handler) rateLimitMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip := h.getClientIP(r)
-		if !h.ipRateLimiter.Allow(ip) {
-			slog.Warn("rate limit exceeded", "ip", ip)
-			h.errorResponse(w, http.StatusTooManyRequests, "rate_limit_exceeded", "Too many requests. Please try again later.")
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
 
 // getClientIP extracts the client IP from the request.
 func (h *Handler) getClientIP(r *http.Request) string {

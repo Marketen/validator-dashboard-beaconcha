@@ -92,9 +92,7 @@ func TestValidateValidatorRequest_Invalid(t *testing.T) {
 func TestHandler_Health(t *testing.T) {
 	h := &Handler{
 		config: &config.Config{
-			MaxValidatorIDs:     100,
-			IPRateLimitRequests: 60,
-			IPRateLimitWindow:   60,
+			MaxValidatorIDs: 100,
 		},
 	}
 
@@ -120,9 +118,7 @@ func TestHandler_Health(t *testing.T) {
 func TestHandler_Validator_InvalidJSON(t *testing.T) {
 	h := &Handler{
 		config: &config.Config{
-			MaxValidatorIDs:     100,
-			IPRateLimitRequests: 60,
-			IPRateLimitWindow:   60,
+			MaxValidatorIDs: 100,
 		},
 	}
 
@@ -148,9 +144,7 @@ func TestHandler_Validator_InvalidJSON(t *testing.T) {
 func TestHandler_Validator_ValidationError(t *testing.T) {
 	h := &Handler{
 		config: &config.Config{
-			MaxValidatorIDs:     100,
-			IPRateLimitRequests: 60,
-			IPRateLimitWindow:   60,
+			MaxValidatorIDs: 100,
 		},
 	}
 

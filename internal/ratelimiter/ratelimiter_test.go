@@ -3,7 +3,6 @@ package ratelimiter
 import (
 	"context"
 	"net/http"
-	"sync"
 	"testing"
 	"time"
 )
@@ -46,77 +45,6 @@ func TestGlobalRateLimiter_ContextCancellation(t *testing.T) {
 	err := limiter.Wait(ctx)
 	if err == nil {
 		t.Error("expected error due to context cancellation")
-	}
-}
-
-func TestIPRateLimiter_Allow(t *testing.T) {
-	limiter := NewIPRateLimiter(5, time.Second)
-
-	ip := "192.168.1.1"
-
-	for i := 0; i < 5; i++ {
-		if !limiter.Allow(ip) {
-			t.Errorf("request %d should be allowed", i+1)
-		}
-	}
-
-	if limiter.Allow(ip) {
-		t.Error("6th request should be denied")
-	}
-}
-
-func TestIPRateLimiter_DifferentIPs(t *testing.T) {
-	limiter := NewIPRateLimiter(2, time.Second)
-
-	ip1 := "192.168.1.1"
-	ip2 := "192.168.1.2"
-
-	if !limiter.Allow(ip1) {
-		t.Error("ip1 request 1 should be allowed")
-	}
-	if !limiter.Allow(ip1) {
-		t.Error("ip1 request 2 should be allowed")
-	}
-	if limiter.Allow(ip1) {
-		t.Error("ip1 request 3 should be denied")
-	}
-
-	if !limiter.Allow(ip2) {
-		t.Error("ip2 request 1 should be allowed")
-	}
-	if !limiter.Allow(ip2) {
-		t.Error("ip2 request 2 should be allowed")
-	}
-}
-
-func TestIPRateLimiter_Concurrent(t *testing.T) {
-	limiter := NewIPRateLimiter(100, time.Second)
-
-	var wg sync.WaitGroup
-	allowed := make(chan bool, 200)
-
-	for i := 0; i < 10; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for j := 0; j < 10; j++ {
-				allowed <- limiter.Allow("test-ip")
-			}
-		}()
-	}
-
-	wg.Wait()
-	close(allowed)
-
-	count := 0
-	for a := range allowed {
-		if a {
-			count++
-		}
-	}
-
-	if count != 100 {
-		t.Errorf("expected 100 allowed requests, got %d", count)
 	}
 }
 
