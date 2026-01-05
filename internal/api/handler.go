@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -34,8 +35,8 @@ func (h *Handler) Router() http.Handler {
 	// Health check endpoint
 	mux.HandleFunc("GET /health", h.handleHealth)
 
-	// Validator endpoint
-	mux.HandleFunc("POST /validator", h.handleValidator)
+	// Validator endpoint (GET for cacheability)
+	mux.HandleFunc("GET /validator", h.handleValidator)
 
 	// Apply middleware
 	handler := h.recoveryMiddleware(mux)
@@ -54,13 +55,22 @@ func (h *Handler) handleHealth(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleValidator handles POST /validator requests.
+// handleValidator handles GET /validator requests.
 func (h *Handler) handleValidator(w http.ResponseWriter, r *http.Request) {
-	// Parse request body
-	var req models.ValidatorRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.errorResponse(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body: "+err.Error())
+	// Parse query parameters
+	idsParam := r.URL.Query().Get("ids")
+	chain := r.URL.Query().Get("chain")
+
+	// Parse validator IDs from comma-separated string
+	validatorIds, err := h.parseValidatorIds(idsParam)
+	if err != nil {
+		h.errorResponse(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
+	}
+
+	req := models.ValidatorRequest{
+		ValidatorIds: validatorIds,
+		Chain:        chain,
 	}
 
 	// Validate request
@@ -78,6 +88,30 @@ func (h *Handler) handleValidator(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.jsonResponse(w, http.StatusOK, response)
+}
+
+// parseValidatorIds parses a comma-separated string of validator IDs.
+func (h *Handler) parseValidatorIds(idsParam string) ([]int, error) {
+	if idsParam == "" {
+		return nil, nil
+	}
+
+	parts := strings.Split(idsParam, ",")
+	ids := make([]int, 0, len(parts))
+
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		id, err := strconv.Atoi(part)
+		if err != nil {
+			return nil, &ValidationError{Field: "ids", Message: "invalid validator ID: " + part}
+		}
+		ids = append(ids, id)
+	}
+
+	return ids, nil
 }
 
 // validateValidatorRequest validates the incoming validator request.
@@ -214,7 +248,7 @@ func (h *Handler) recoveryMiddleware(next http.Handler) http.Handler {
 func (h *Handler) corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
 		if r.Method == http.MethodOptions {

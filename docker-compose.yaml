@@ -11,9 +11,6 @@ services:
       - BEACONCHAIN_API_KEY=${BEACONCHAIN_API_KEY}
       - BEACONCHAIN_RATE_LIMIT=1300ms
       - BEACONCHAIN_TIMEOUT=30s
-      - CACHE_TTL=20m
-      - IP_RATE_LIMIT_REQUESTS=60
-      - IP_RATE_LIMIT_WINDOW=1m
       - MAX_VALIDATOR_IDS=100
     restart: unless-stopped
     healthcheck:

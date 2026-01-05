@@ -5,11 +5,79 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 
 	"github.com/Marketen/validator-dashboard-beaconcha/internal/config"
 	"github.com/Marketen/validator-dashboard-beaconcha/internal/models"
 )
+
+func TestParseValidatorIds(t *testing.T) {
+	h := &Handler{}
+
+	tests := []struct {
+		name        string
+		input       string
+		expected    []int
+		shouldError bool
+	}{
+		{
+			name:        "single ID",
+			input:       "123",
+			expected:    []int{123},
+			shouldError: false,
+		},
+		{
+			name:        "multiple IDs",
+			input:       "1,2,3,4,5",
+			expected:    []int{1, 2, 3, 4, 5},
+			shouldError: false,
+		},
+		{
+			name:        "IDs with spaces",
+			input:       "1, 2, 3",
+			expected:    []int{1, 2, 3},
+			shouldError: false,
+		},
+		{
+			name:        "empty string",
+			input:       "",
+			expected:    nil,
+			shouldError: false,
+		},
+		{
+			name:        "invalid ID",
+			input:       "1,abc,3",
+			expected:    nil,
+			shouldError: true,
+		},
+		{
+			name:        "trailing comma",
+			input:       "1,2,3,",
+			expected:    []int{1, 2, 3},
+			shouldError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := h.parseValidatorIds(tt.input)
+			if tt.shouldError {
+				if err == nil {
+					t.Error("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+			if !reflect.DeepEqual(result, tt.expected) {
+				t.Errorf("expected %v, got %v", tt.expected, result)
+			}
+		})
+	}
+}
 
 func TestValidateValidatorRequest_Valid(t *testing.T) {
 	h := &Handler{
@@ -115,41 +183,14 @@ func TestHandler_Health(t *testing.T) {
 	}
 }
 
-func TestHandler_Validator_InvalidJSON(t *testing.T) {
+func TestHandler_Validator_MissingIds(t *testing.T) {
 	h := &Handler{
 		config: &config.Config{
 			MaxValidatorIDs: 100,
 		},
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/validator", bytes.NewBufferString("invalid json"))
-	w := httptest.NewRecorder()
-
-	h.handleValidator(w, req)
-
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("expected status 400, got %d", w.Code)
-	}
-
-	var response models.APIError
-	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
-		t.Fatalf("failed to parse response: %v", err)
-	}
-
-	if response.Error != "invalid_request" {
-		t.Errorf("expected error 'invalid_request', got '%s'", response.Error)
-	}
-}
-
-func TestHandler_Validator_ValidationError(t *testing.T) {
-	h := &Handler{
-		config: &config.Config{
-			MaxValidatorIDs: 100,
-		},
-	}
-
-	body := `{"validatorIds": []}`
-	req := httptest.NewRequest(http.MethodPost, "/validator", bytes.NewBufferString(body))
+	req := httptest.NewRequest(http.MethodGet, "/validator?chain=mainnet", nil)
 	w := httptest.NewRecorder()
 
 	h.handleValidator(w, req)
@@ -165,6 +206,60 @@ func TestHandler_Validator_ValidationError(t *testing.T) {
 
 	if response.Error != "validation_error" {
 		t.Errorf("expected error 'validation_error', got '%s'", response.Error)
+	}
+}
+
+func TestHandler_Validator_ValidationError(t *testing.T) {
+	h := &Handler{
+		config: &config.Config{
+			MaxValidatorIDs: 100,
+		},
+	}
+
+	// Empty ids parameter
+	req := httptest.NewRequest(http.MethodGet, "/validator?ids=&chain=mainnet", nil)
+	w := httptest.NewRecorder()
+
+	h.handleValidator(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected status 400, got %d", w.Code)
+	}
+
+	var response models.APIError
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+
+	if response.Error != "validation_error" {
+		t.Errorf("expected error 'validation_error', got '%s'", response.Error)
+	}
+}
+
+func TestHandler_Validator_InvalidIdFormat(t *testing.T) {
+	h := &Handler{
+		config: &config.Config{
+			MaxValidatorIDs: 100,
+		},
+	}
+
+	// Non-numeric ID
+	req := httptest.NewRequest(http.MethodGet, "/validator?ids=1,abc,3&chain=mainnet", nil)
+	w := httptest.NewRecorder()
+
+	h.handleValidator(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected status 400, got %d", w.Code)
+	}
+
+	var response models.APIError
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+
+	if response.Error != "invalid_request" {
+		t.Errorf("expected error 'invalid_request', got '%s'", response.Error)
 	}
 }
 
