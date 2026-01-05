@@ -3,31 +3,24 @@ package service
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"math/big"
-	"sort"
 	"strconv"
-	"strings"
 
 	"github.com/Marketen/validator-dashboard-beaconcha/internal/beaconcha"
-	"github.com/Marketen/validator-dashboard-beaconcha/internal/cache"
 	"github.com/Marketen/validator-dashboard-beaconcha/internal/models"
 )
 
 // ValidatorService handles validator data aggregation.
 type ValidatorService struct {
 	beaconchainClient *beaconcha.Client
-	cache             *cache.Cache
 }
 
 // NewValidatorService creates a new validator service.
-func NewValidatorService(client *beaconcha.Client, cache *cache.Cache) *ValidatorService {
+func NewValidatorService(client *beaconcha.Client) *ValidatorService {
 	return &ValidatorService{
 		beaconchainClient: client,
-		cache:             cache,
 	}
 }
 
@@ -37,27 +30,10 @@ func (s *ValidatorService) GetValidatorData(ctx context.Context, chain string, v
 		return models.ValidatorResponse{}, nil
 	}
 
-	// Generate cache key from sorted validator IDs
-	cacheKey := s.generateCacheKey(validatorIds)
-
-	// Check cache first
-	if cached, ok := s.cache.Get(cacheKey); ok {
-		slog.Debug("cache hit", "key", cacheKey)
-		return cached.(models.ValidatorResponse), nil
-	}
-
-	slog.Debug("cache miss", "key", cacheKey, "validators", len(validatorIds))
+	slog.Debug("fetching validator data", "validators", len(validatorIds))
 
 	// Fetch data from Beaconcha
-	response, err := s.fetchAndAggregate(ctx, chain, validatorIds)
-	if err != nil {
-		return nil, err
-	}
-
-	// Store in cache
-	s.cache.Set(cacheKey, response)
-
-	return response, nil
+	return s.fetchAndAggregate(ctx, chain, validatorIds)
 }
 
 // fetchAndAggregate fetches all required data from Beaconcha and aggregates it.
@@ -248,27 +224,4 @@ func (s *ValidatorService) buildPerformance(p *models.BeaconchainPerformanceAggr
 			Beaconscore:       p.Data.Beaconscore.Proposal,
 		},
 	}
-}
-
-// generateCacheKey creates a unique cache key from validator IDs.
-func (s *ValidatorService) generateCacheKey(validatorIds []int) string {
-	// Sort IDs for consistent cache keys
-	sorted := make([]int, len(validatorIds))
-	copy(sorted, validatorIds)
-	sort.Ints(sorted)
-
-	// Create string representation
-	ids := make([]string, len(sorted))
-	for i, id := range sorted {
-		ids[i] = strconv.Itoa(id)
-	}
-	key := strings.Join(ids, ",")
-
-	// Hash for shorter key if many validators
-	if len(validatorIds) > 10 {
-		hash := sha256.Sum256([]byte(key))
-		return "validators:" + hex.EncodeToString(hash[:8])
-	}
-
-	return "validators:" + key
 }

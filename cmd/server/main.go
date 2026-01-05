@@ -12,7 +12,6 @@ import (
 
 	"github.com/Marketen/validator-dashboard-beaconcha/internal/api"
 	"github.com/Marketen/validator-dashboard-beaconcha/internal/beaconcha"
-	"github.com/Marketen/validator-dashboard-beaconcha/internal/cache"
 	"github.com/Marketen/validator-dashboard-beaconcha/internal/config"
 	"github.com/Marketen/validator-dashboard-beaconcha/internal/ratelimiter"
 	"github.com/Marketen/validator-dashboard-beaconcha/internal/service"
@@ -35,14 +34,10 @@ func main() {
 	slog.Info("starting validator-dashboard",
 		"port", cfg.Port,
 		"beaconcha_base_url", cfg.BeaconchainBaseURL,
-		"cache_ttl", cfg.CacheTTL,
 	)
 
 	// Initialize global rate limiter for Beaconcha API (1 req/sec)
 	beaconchainRateLimiter := ratelimiter.NewGlobalRateLimiter(cfg.BeaconchainRateLimit)
-
-	// Initialize cache
-	responseCache := cache.New(cfg.CacheTTL)
 
 	// Initialize Beaconcha client
 	beaconchainClient := beaconcha.NewClient(
@@ -53,7 +48,7 @@ func main() {
 	)
 
 	// Initialize validator service
-	validatorService := service.NewValidatorService(beaconchainClient, responseCache)
+	validatorService := service.NewValidatorService(beaconchainClient)
 
 	// Initialize API handler
 	handler := api.NewHandler(validatorService, cfg)

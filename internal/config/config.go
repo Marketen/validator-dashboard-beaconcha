@@ -19,13 +19,6 @@ type Config struct {
 	BeaconchainRateLimit time.Duration
 	BeaconchainTimeout   time.Duration
 
-	// Cache configuration
-	CacheTTL time.Duration
-
-	// Rate limiting for incoming requests (per-IP)
-	IPRateLimitRequests int
-	IPRateLimitWindow   time.Duration
-
 	// Request validation
 	MaxValidatorIDs int
 }
@@ -38,17 +31,10 @@ func Load() (*Config, error) {
 		BeaconchainAPIKey:    getEnv("BEACONCHAIN_API_KEY", ""),
 		BeaconchainRateLimit: getDurationEnv("BEACONCHAIN_RATE_LIMIT", time.Second), // 1 req/sec
 		BeaconchainTimeout:   getDurationEnv("BEACONCHAIN_TIMEOUT", 30*time.Second),
-		CacheTTL:             getDurationEnv("CACHE_TTL", 20*time.Minute), // 15-30 min range, default 20
-		IPRateLimitRequests:  getIntEnv("IP_RATE_LIMIT_REQUESTS", 60),     // 60 requests
-		IPRateLimitWindow:    getDurationEnv("IP_RATE_LIMIT_WINDOW", time.Minute),
 		MaxValidatorIDs:      getIntEnv("MAX_VALIDATOR_IDS", 100),
 	}
 
 	// Validate configuration
-	if cfg.CacheTTL < 15*time.Minute || cfg.CacheTTL > 30*time.Minute {
-		return nil, fmt.Errorf("cache TTL must be between 15 and 30 minutes, got %v", cfg.CacheTTL)
-	}
-
 	if cfg.MaxValidatorIDs < 1 || cfg.MaxValidatorIDs > 100 {
 		return nil, fmt.Errorf("max validator IDs must be between 1 and 100, got %d", cfg.MaxValidatorIDs)
 	}
