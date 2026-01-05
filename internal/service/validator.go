@@ -24,19 +24,19 @@ func NewValidatorService(client *beaconcha.Client) *ValidatorService {
 }
 
 // GetValidatorData fetches and aggregates data for the given validator IDs.
-func (s *ValidatorService) GetValidatorData(ctx context.Context, chain string, validatorIds []int) (models.ValidatorResponse, error) {
+func (s *ValidatorService) GetValidatorData(ctx context.Context, chain string, validatorIds []int, evalRange string) (models.ValidatorResponse, error) {
 	if len(validatorIds) == 0 {
 		return models.ValidatorResponse{}, nil
 	}
 
-	slog.Debug("fetching validator data", "validators", len(validatorIds))
+	slog.Debug("fetching validator data", "validators", len(validatorIds), "range", evalRange)
 
 	// Fetch data from Beaconcha
-	return s.fetchAndAggregate(ctx, chain, validatorIds)
+	return s.fetchAndAggregate(ctx, chain, validatorIds, evalRange)
 }
 
 // fetchAndAggregate fetches all required data from Beaconcha and aggregates it.
-func (s *ValidatorService) fetchAndAggregate(ctx context.Context, chain string, validatorIds []int) (models.ValidatorResponse, error) {
+func (s *ValidatorService) fetchAndAggregate(ctx context.Context, chain string, validatorIds []int, evalRange string) (models.ValidatorResponse, error) {
 	// Fetch validator overview data (per-validator)
 	validators, err := s.beaconchainClient.GetValidators(ctx, chain, validatorIds)
 	if err != nil {
@@ -44,13 +44,13 @@ func (s *ValidatorService) fetchAndAggregate(ctx context.Context, chain string, 
 	}
 
 	// Fetch aggregated rewards (combined for all validators)
-	rewards, err := s.beaconchainClient.GetRewardsAggregate(ctx, chain, validatorIds)
+	rewards, err := s.beaconchainClient.GetRewardsAggregate(ctx, chain, validatorIds, evalRange)
 	if err != nil {
 		return models.ValidatorResponse{}, fmt.Errorf("fetch rewards: %w", err)
 	}
 
 	// Fetch aggregated performance (combined for all validators)
-	performance, err := s.beaconchainClient.GetPerformanceAggregate(ctx, chain, validatorIds)
+	performance, err := s.beaconchainClient.GetPerformanceAggregate(ctx, chain, validatorIds, evalRange)
 	if err != nil {
 		return models.ValidatorResponse{}, fmt.Errorf("fetch performance: %w", err)
 	}
@@ -112,13 +112,10 @@ func (s *ValidatorService) buildOverview(v models.BeaconchainValidatorData) mode
 // buildWithdrawalCredentials builds withdrawal credentials from v2 API response.
 func (s *ValidatorService) buildWithdrawalCredentials(creds models.BeaconchainWithdrawalCreds) models.WithdrawalCredentials {
 	result := models.WithdrawalCredentials{
-		Type: creds.Type,
-	}
-
-	if creds.Address != nil {
-		result.Address = *creds.Address
-	} else {
-		result.Address = creds.Credential
+		Type:       creds.Type,
+		Prefix:     creds.Prefix,
+		Credential: creds.Credential,
+		Address:    creds.Address,
 	}
 
 	return result

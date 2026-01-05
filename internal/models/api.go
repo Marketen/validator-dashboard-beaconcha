@@ -8,6 +8,8 @@ type ValidatorRequest struct {
 	ValidatorIds []int `json:"validatorIds"`
 	// Chain is the target chain for the request. Allowed values: "mainnet", "hoodi".
 	Chain string `json:"chain"`
+	// Range is the evaluation window for aggregates. Allowed values: "24h", "7d", "30d", "90d", "all_time".
+	Range string `json:"range"`
 }
 
 // ValidatorResponse contains per-validator overviews and aggregated rewards/performance.
@@ -34,8 +36,10 @@ type ValidatorOverview struct {
 
 // WithdrawalCredentials contains the type and address for withdrawals.
 type WithdrawalCredentials struct {
-	Type    string `json:"type"`    // "0x00" (BLS) or "0x01" (execution address)
-	Address string `json:"address"` // The full credentials hex string or derived address
+	Type       string  `json:"type"`
+	Prefix     string  `json:"prefix"`
+	Credential string  `json:"credential"`
+	Address    *string `json:"address,omitempty"`
 }
 
 // ValidatorRewards contains all-time reward/penalty information.

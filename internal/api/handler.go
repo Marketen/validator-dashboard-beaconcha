@@ -60,6 +60,12 @@ func (h *Handler) handleValidator(w http.ResponseWriter, r *http.Request) {
 	// Parse query parameters
 	idsParam := r.URL.Query().Get("ids")
 	chain := r.URL.Query().Get("chain")
+	evalRange := r.URL.Query().Get("range")
+
+	// Default range to all_time if not specified
+	if evalRange == "" {
+		evalRange = "all_time"
+	}
 
 	// Parse validator IDs from comma-separated string
 	validatorIds, err := h.parseValidatorIds(idsParam)
@@ -71,6 +77,7 @@ func (h *Handler) handleValidator(w http.ResponseWriter, r *http.Request) {
 	req := models.ValidatorRequest{
 		ValidatorIds: validatorIds,
 		Chain:        chain,
+		Range:        evalRange,
 	}
 
 	// Validate request
@@ -80,7 +87,7 @@ func (h *Handler) handleValidator(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch validator data
-	response, err := h.validatorService.GetValidatorData(r.Context(), req.Chain, req.ValidatorIds)
+	response, err := h.validatorService.GetValidatorData(r.Context(), req.Chain, req.ValidatorIds, req.Range)
 	if err != nil {
 		slog.Error("failed to fetch validator data", "error", err)
 		h.errorResponse(w, http.StatusInternalServerError, "internal_error", "Failed to fetch validator data")
@@ -142,6 +149,12 @@ func (h *Handler) validateValidatorRequest(req models.ValidatorRequest) error {
 	}
 	if req.Chain != "mainnet" && req.Chain != "hoodi" {
 		return &ValidationError{Field: "chain", Message: "must be one of: mainnet, hoodi"}
+	}
+
+	// Validate range
+	validRanges := map[string]bool{"24h": true, "7d": true, "30d": true, "90d": true, "all_time": true}
+	if !validRanges[req.Range] {
+		return &ValidationError{Field: "range", Message: "must be one of: 24h, 7d, 30d, 90d, all_time"}
 	}
 
 	return nil

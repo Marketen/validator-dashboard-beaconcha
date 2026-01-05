@@ -116,7 +116,7 @@ func (c *Client) GetValidators(ctx context.Context, chain string, validatorIds [
 
 // GetRewardsAggregate fetches aggregated rewards for validators.
 // Uses POST /api/v2/ethereum/validators/rewards-aggregate
-func (c *Client) GetRewardsAggregate(ctx context.Context, chain string, validatorIds []int) (*models.BeaconchainRewardsAggregateResponse, error) {
+func (c *Client) GetRewardsAggregate(ctx context.Context, chain string, validatorIds []int, evalRange string) (*models.BeaconchainRewardsAggregateResponse, error) {
 	if len(validatorIds) == 0 {
 		return nil, nil
 	}
@@ -132,7 +132,7 @@ func (c *Client) GetRewardsAggregate(ctx context.Context, chain string, validato
 			ValidatorIdentifiers: validatorIds,
 		},
 		Range: models.BeaconchainTimeRangeSelector{
-			EvaluationWindow: "all_time",
+			EvaluationWindow: evalRange,
 		},
 	}
 
@@ -182,7 +182,7 @@ func (c *Client) GetRewardsAggregate(ctx context.Context, chain string, validato
 
 // GetPerformanceAggregate fetches aggregated performance metrics for validators.
 // Uses POST /api/v2/ethereum/validators/performance-aggregate
-func (c *Client) GetPerformanceAggregate(ctx context.Context, chain string, validatorIds []int) (*models.BeaconchainPerformanceAggregateResponse, error) {
+func (c *Client) GetPerformanceAggregate(ctx context.Context, chain string, validatorIds []int, evalRange string) (*models.BeaconchainPerformanceAggregateResponse, error) {
 	if len(validatorIds) == 0 {
 		return nil, nil
 	}
@@ -198,7 +198,7 @@ func (c *Client) GetPerformanceAggregate(ctx context.Context, chain string, vali
 			ValidatorIdentifiers: validatorIds,
 		},
 		Range: models.BeaconchainTimeRangeSelector{
-			EvaluationWindow: "all_time",
+			EvaluationWindow: evalRange,
 		},
 	}
 
