@@ -86,6 +86,7 @@ type BeaconchainTimeRangeSelector struct {
 }
 
 // BeaconchainRewardsAggregateResponse represents the response from rewards aggregate endpoint.
+// Returns aggregated rewards for all requested validators combined.
 type BeaconchainRewardsAggregateResponse struct {
 	Data  BeaconchainRewardsData `json:"data"`
 	Range BeaconchainResultRange `json:"range"`
@@ -172,6 +173,7 @@ type BeaconchainTimestampRange struct {
 }
 
 // BeaconchainPerformanceAggregateResponse represents the response from performance aggregate endpoint.
+// Returns aggregated performance for all requested validators combined.
 type BeaconchainPerformanceAggregateResponse struct {
 	Data  BeaconchainPerformanceData `json:"data"`
 	Range BeaconchainResultRange     `json:"range"`

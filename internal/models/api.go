@@ -10,13 +10,13 @@ type ValidatorRequest struct {
 	Chain string `json:"chain"`
 }
 
-// ValidatorResponse is the full response keyed by validator ID.
-type ValidatorResponse map[string]ValidatorData
-
-// ValidatorData contains all aggregated data for a single validator.
-type ValidatorData struct {
-	Overview    ValidatorOverview    `json:"overview"`
-	Rewards     ValidatorRewards     `json:"rewards"`
+// ValidatorResponse contains per-validator overviews and aggregated rewards/performance.
+type ValidatorResponse struct {
+	// Validators contains per-validator overview data keyed by validator ID.
+	Validators map[string]ValidatorOverview `json:"validators"`
+	// Rewards contains aggregated rewards for all requested validators.
+	Rewards ValidatorRewards `json:"rewards"`
+	// Performance contains aggregated performance for all requested validators.
 	Performance ValidatorPerformance `json:"performance"`
 }
 

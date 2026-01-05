@@ -38,50 +38,38 @@ func (s *ValidatorService) GetValidatorData(ctx context.Context, chain string, v
 
 // fetchAndAggregate fetches all required data from Beaconcha and aggregates it.
 func (s *ValidatorService) fetchAndAggregate(ctx context.Context, chain string, validatorIds []int) (models.ValidatorResponse, error) {
-	// Fetch validator overview data
+	// Fetch validator overview data (per-validator)
 	validators, err := s.beaconchainClient.GetValidators(ctx, chain, validatorIds)
 	if err != nil {
-		return nil, fmt.Errorf("fetch validators: %w", err)
+		return models.ValidatorResponse{}, fmt.Errorf("fetch validators: %w", err)
 	}
 
-	// Fetch aggregated rewards
+	// Fetch aggregated rewards (combined for all validators)
 	rewards, err := s.beaconchainClient.GetRewardsAggregate(ctx, chain, validatorIds)
 	if err != nil {
-		return nil, fmt.Errorf("fetch rewards: %w", err)
+		return models.ValidatorResponse{}, fmt.Errorf("fetch rewards: %w", err)
 	}
 
-	// Fetch aggregated performance
+	// Fetch aggregated performance (combined for all validators)
 	performance, err := s.beaconchainClient.GetPerformanceAggregate(ctx, chain, validatorIds)
 	if err != nil {
-		return nil, fmt.Errorf("fetch performance: %w", err)
+		return models.ValidatorResponse{}, fmt.Errorf("fetch performance: %w", err)
 	}
 
-	// Build response
-	response := make(models.ValidatorResponse)
-
-	// Create a map for quick lookup
-	validatorMap := make(map[int]models.BeaconchainValidatorData)
+	// Build per-validator overview map
+	validatorOverviews := make(map[string]models.ValidatorOverview)
 	for _, v := range validators {
 		if v.Validator.Index != nil {
-			validatorMap[*v.Validator.Index] = v
+			idStr := strconv.Itoa(*v.Validator.Index)
+			validatorOverviews[idStr] = s.buildOverview(v)
 		}
 	}
 
-	// Build individual validator responses
-	for _, id := range validatorIds {
-		validator, exists := validatorMap[id]
-		if !exists {
-			slog.Warn("validator not found in response", "id", id)
-			continue
-		}
-
-		validatorData := models.ValidatorData{
-			Overview:    s.buildOverview(validator),
-			Rewards:     s.buildRewards(rewards),
-			Performance: s.buildPerformance(performance),
-		}
-
-		response[strconv.Itoa(id)] = validatorData
+	// Build response with per-validator overviews and single aggregated rewards/performance
+	response := models.ValidatorResponse{
+		Validators:  validatorOverviews,
+		Rewards:     s.buildRewards(rewards),
+		Performance: s.buildPerformance(performance),
 	}
 
 	return response, nil
@@ -156,7 +144,7 @@ func (s *ValidatorService) buildWithdrawalCredentials(creds models.BeaconchainWi
 	return result
 }
 
-// buildRewards constructs the rewards section from aggregated rewards data.
+// buildRewards constructs the rewards section from aggregated rewards response.
 func (s *ValidatorService) buildRewards(r *models.BeaconchainRewardsAggregateResponse) models.ValidatorRewards {
 	if r == nil {
 		return models.ValidatorRewards{}
@@ -192,7 +180,7 @@ func (s *ValidatorService) buildRewards(r *models.BeaconchainRewardsAggregateRes
 	}
 }
 
-// buildPerformance constructs the performance section from aggregated performance data.
+// buildPerformance constructs the performance section from aggregated performance response.
 func (s *ValidatorService) buildPerformance(p *models.BeaconchainPerformanceAggregateResponse) models.ValidatorPerformance {
 	if p == nil {
 		return models.ValidatorPerformance{}
