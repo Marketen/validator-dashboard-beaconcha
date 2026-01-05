@@ -6,6 +6,8 @@ A read-only public REST API that consumes the Beaconcha v2 API and aggregates va
 
 - **Single Endpoint**: `GET /validator` to fetch aggregated data for up to 100 validators
 - **Multi-chain Support**: Supports `mainnet` and `hoodi` chains
+- **Flexible Time Ranges**: Query rewards/performance for `24h`, `7d`, `30d`, `90d`, or `all_time`
+- **Aggregated Data**: Returns per-validator overviews with combined rewards/performance metrics
 - **Beaconcha Rate Limiting**: Adaptive rate limiting using Beaconcha response headers
 - **Abuse Prevention**: Request validation and query parameter limits
 - **Cursor-based Pagination**: Automatically fetches all pages from Beaconcha v2 API
@@ -65,96 +67,113 @@ Response:
 ### Get Validator Data
 
 ```
-GET /validator?ids=12345,67890&chain=mainnet
+GET /validator?ids=1,2,3&chain=mainnet&range=all_time
 ```
 
 **Query Parameters:**
-- `ids`: Comma-separated list of validator indices
-  - Minimum: 1 validator
-  - Maximum: 100 validators
-  - Values must be unique
-  - Values must be non-negative integers
-- `chain`: Required string, either `mainnet` or `hoodi`
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `ids` | Yes | Comma-separated list of validator indices (1-100, unique, non-negative) |
+| `chain` | Yes | Target chain: `mainnet` or `hoodi` |
+| `range` | No | Evaluation window for aggregates: `24h`, `7d`, `30d`, `90d`, `all_time` (default: `all_time`) |
 
-**Example:**
+**Example Request:**
 ```bash
-curl "http://localhost:8080/validator?ids=12345,67890&chain=mainnet"
+curl "http://localhost:8080/validator?ids=1,2,3&chain=mainnet&range=24h"
 ```
 
-**Response:**
+**Response Structure:**
+
+The response contains:
+- `validators`: Per-validator overview data (status, balances, epochs, etc.)
+- `rewards`: **Aggregated** rewards for ALL requested validators combined
+- `performance`: **Aggregated** performance metrics for ALL requested validators combined
 
 ```json
 {
-  "12345": {
-    "overview": {
+  "validators": {
+    "1": {
       "slashed": false,
       "status": "active_online",
       "withdrawalCredentials": {
         "type": "execution",
+        "prefix": "0x01",
+        "credential": "...",
         "address": "0x..."
       },
-      "activationEpoch": 290297,
+      "activationEpoch": 0,
       "exitEpoch": 0,
-      "currentBalance": 32014494648,
-      "effectiveBalance": 32000000000,
+      "currentBalance": "32004175273000000000",
+      "effectiveBalance": "32000000000000000000",
       "online": true
     },
-    "rewards": {
-      "total": "1234567890000000000",
-      "totalReward": "1234567890000000000",
-      "totalPenalty": "0",
-      "totalMissed": "0",
-      "proposals": {
-        "total": "...",
-        "executionLayerReward": "...",
-        "attestationInclusionReward": "...",
-        "syncInclusionReward": "...",
-        "slashingInclusionReward": "...",
-        "missedClReward": "...",
-        "missedElReward": "..."
-      },
-      "attestations": {
-        "total": "...",
-        "head": "...",
-        "source": "...",
-        "target": "...",
-        "inactivityLeakPenalty": "..."
-      },
-      "syncCommittees": {
-        "total": "...",
-        "reward": "...",
-        "penalty": "...",
-        "missedReward": "..."
-      }
+    "2": {
+      "slashed": false,
+      "status": "active_online",
+      "...": "..."
     },
-    "performance": {
-      "beaconscore": 0.99,
-      "attestations": {
-        "assigned": 10000,
-        "included": 9990,
-        "missed": 10,
-        "correctHead": 9980,
-        "correctSource": 9990,
-        "correctTarget": 9985,
-        "avgInclusionDelay": 1.05,
-        "beaconscore": 0.99
-      },
-      "syncCommittees": {
-        "assigned": 512,
-        "successful": 510,
-        "missed": 2,
-        "beaconscore": 0.996
-      },
-      "proposals": {
-        "assigned": 5,
-        "successful": 5,
-        "missed": 0,
-        "includedSlashings": 0,
-        "beaconscore": 1.0
-      }
+    "3": {
+      "...": "..."
+    }
+  },
+  "rewards": {
+    "total": "6099749000000000",
+    "totalReward": "6104156000000000",
+    "totalPenalty": "4407000000000",
+    "totalMissed": "36022000000000",
+    "proposals": {
+      "total": "0",
+      "executionLayerReward": "0",
+      "attestationInclusionReward": "0",
+      "syncInclusionReward": "0",
+      "slashingInclusionReward": "0",
+      "missedClReward": "0",
+      "missedElReward": "0"
+    },
+    "attestations": {
+      "total": "6099749000000000",
+      "head": "1544410000000000",
+      "source": "1598352000000000",
+      "target": "2956987000000000",
+      "inactivityLeakPenalty": "0"
+    },
+    "syncCommittees": {
+      "total": "0",
+      "reward": "0",
+      "penalty": "0",
+      "missedReward": "0"
+    }
+  },
+  "performance": {
+    "beaconscore": 0.9934041,
+    "attestations": {
+      "assigned": 450,
+      "included": 450,
+      "missed": 0,
+      "correctHead": 442,
+      "correctSource": 450,
+      "correctTarget": 449,
+      "avgInclusionDelay": 0.0044444446,
+      "beaconscore": 0.9934041
+    },
+    "syncCommittees": {
+      "assigned": 0,
+      "successful": 0,
+      "missed": 0,
+      "beaconscore": null
+    },
+    "proposals": {
+      "assigned": 0,
+      "successful": 0,
+      "missed": 0,
+      "includedSlashings": 0,
+      "beaconscore": null
     }
   }
 }
+```
+
+**Note:** The `rewards` and `performance` sections are aggregated across ALL validators in the request—they are NOT per-validator. If you request validators 1, 2, and 3, the rewards/performance represent the combined totals for all three.
 ```
 
 ## Configuration
