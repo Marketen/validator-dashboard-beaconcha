@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"math/big"
 	"strconv"
 
 	"github.com/Marketen/validator-dashboard-beaconcha/internal/beaconcha"
@@ -78,8 +77,8 @@ func (s *ValidatorService) fetchAndAggregate(ctx context.Context, chain string, 
 // buildOverview constructs the overview section from validator data.
 func (s *ValidatorService) buildOverview(v models.BeaconchainValidatorData) models.ValidatorOverview {
 	// Parse balances from wei strings
-	currentBalance := parseWeiToGwei(v.Balances.Current)
-	effectiveBalance := parseWeiToGwei(v.Balances.Effective)
+	currentBalance := v.Balances.Current
+	effectiveBalance := v.Balances.Effective
 
 	// Get activation and exit epochs
 	var activationEpoch, exitEpoch int64
@@ -108,25 +107,6 @@ func (s *ValidatorService) buildOverview(v models.BeaconchainValidatorData) mode
 		EffectiveBalance:      effectiveBalance,
 		Online:                online,
 	}
-}
-
-// parseWeiToGwei converts a wei string to gwei (divide by 10^9).
-func parseWeiToGwei(weiStr string) int64 {
-	if weiStr == "" {
-		return 0
-	}
-
-	// Use big.Int for proper handling of large wei values
-	wei := new(big.Int)
-	_, ok := wei.SetString(weiStr, 10)
-	if !ok {
-		return 0
-	}
-
-	// Divide by 10^9 to get gwei
-	gwei := new(big.Int).Div(wei, big.NewInt(1000000000))
-
-	return gwei.Int64()
 }
 
 // buildWithdrawalCredentials builds withdrawal credentials from v2 API response.

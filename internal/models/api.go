@@ -27,8 +27,8 @@ type ValidatorOverview struct {
 	WithdrawalCredentials WithdrawalCredentials `json:"withdrawalCredentials"`
 	ActivationEpoch       int64                 `json:"activationEpoch"`
 	ExitEpoch             int64                 `json:"exitEpoch"`
-	CurrentBalance        int64                 `json:"currentBalance"`   // in gwei
-	EffectiveBalance      int64                 `json:"effectiveBalance"` // in gwei
+	CurrentBalance        string                `json:"currentBalance"`   // in wei
+	EffectiveBalance      string                `json:"effectiveBalance"` //in wei
 	Online                bool                  `json:"online"`
 }
 
