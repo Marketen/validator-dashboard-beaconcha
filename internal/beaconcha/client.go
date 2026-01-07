@@ -47,11 +47,6 @@ func (c *Client) GetValidators(ctx context.Context, chain string, validatorIds [
 	cursor := ""
 
 	for {
-		// Wait for rate limiter (adaptive, respects rate limit headers)
-		if err := c.rateLimiter.WaitAdaptive(ctx); err != nil {
-			return nil, fmt.Errorf("rate limiter: %w", err)
-		}
-
 		reqBody := models.BeaconchainValidatorsRequest{
 			Chain: chain,
 			Validator: models.BeaconchainValidatorSelector{
@@ -78,18 +73,9 @@ func (c *Client) GetValidators(ctx context.Context, chain string, validatorIds [
 
 		slog.Debug("beaconcha request", "method", "POST", "endpoint", "validators", "cursor", cursor)
 
-		resp, err := c.httpClient.Do(req)
+		resp, body, err := c.doRequestWithRetry(ctx, req, bodyBytes, 3)
 		if err != nil {
-			return nil, fmt.Errorf("http request: %w", err)
-		}
-
-		// Update rate limiter with response headers
-		c.rateLimiter.UpdateFromHeaders(ratelimiter.ParseRateLimitHeaders(resp))
-
-		body, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			return nil, fmt.Errorf("read response: %w", err)
+			return nil, fmt.Errorf("fetch validators: %w", err)
 		}
 
 		if resp.StatusCode != http.StatusOK {
@@ -121,11 +107,6 @@ func (c *Client) GetRewardsAggregate(ctx context.Context, chain string, validato
 		return nil, nil
 	}
 
-	// Wait for rate limiter (adaptive, respects rate limit headers)
-	if err := c.rateLimiter.WaitAdaptive(ctx); err != nil {
-		return nil, fmt.Errorf("rate limiter: %w", err)
-	}
-
 	reqBody := models.BeaconchainRewardsAggregateRequest{
 		Chain: chain,
 		Validator: models.BeaconchainValidatorSelector{
@@ -153,18 +134,9 @@ func (c *Client) GetRewardsAggregate(ctx context.Context, chain string, validato
 
 	slog.Debug("beaconcha request", "method", "POST", "endpoint", "rewards-aggregate")
 
-	resp, err := c.httpClient.Do(req)
+	resp, body, err := c.doRequestWithRetry(ctx, req, bodyBytes, 3)
 	if err != nil {
-		return nil, fmt.Errorf("http request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// Update rate limiter with response headers
-	c.rateLimiter.UpdateFromHeaders(ratelimiter.ParseRateLimitHeaders(resp))
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read response: %w", err)
+		return nil, fmt.Errorf("fetch rewards: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -185,11 +157,6 @@ func (c *Client) GetRewardsAggregate(ctx context.Context, chain string, validato
 func (c *Client) GetPerformanceAggregate(ctx context.Context, chain string, validatorIds []int, evalRange string) (*models.BeaconchainPerformanceAggregateResponse, error) {
 	if len(validatorIds) == 0 {
 		return nil, nil
-	}
-
-	// Wait for rate limiter (adaptive, respects rate limit headers)
-	if err := c.rateLimiter.WaitAdaptive(ctx); err != nil {
-		return nil, fmt.Errorf("rate limiter: %w", err)
 	}
 
 	reqBody := models.BeaconchainPerformanceAggregateRequest{
@@ -219,18 +186,9 @@ func (c *Client) GetPerformanceAggregate(ctx context.Context, chain string, vali
 
 	slog.Debug("beaconcha request", "method", "POST", "endpoint", "performance-aggregate")
 
-	resp, err := c.httpClient.Do(req)
+	resp, body, err := c.doRequestWithRetry(ctx, req, bodyBytes, 3)
 	if err != nil {
-		return nil, fmt.Errorf("http request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// Update rate limiter with response headers
-	c.rateLimiter.UpdateFromHeaders(ratelimiter.ParseRateLimitHeaders(resp))
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read response: %w", err)
+		return nil, fmt.Errorf("fetch performance: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -252,4 +210,70 @@ func (c *Client) addHeaders(req *http.Request) {
 	if c.apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	}
+}
+
+// doRequestWithRetry performs an HTTP request with retry logic for rate limit errors.
+// It handles 429 responses by waiting for the reset duration and retrying.
+func (c *Client) doRequestWithRetry(ctx context.Context, req *http.Request, bodyBytes []byte, maxRetries int) (*http.Response, []byte, error) {
+	var lastErr error
+
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		// Wait for rate limiter before each attempt
+		if err := c.rateLimiter.WaitAdaptive(ctx); err != nil {
+			return nil, nil, fmt.Errorf("rate limiter: %w", err)
+		}
+
+		// Clone the request for retry (body needs to be reset)
+		reqClone := req.Clone(ctx)
+		if bodyBytes != nil {
+			reqClone.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+		}
+
+		resp, err := c.httpClient.Do(reqClone)
+		if err != nil {
+			lastErr = fmt.Errorf("http request: %w", err)
+			continue
+		}
+
+		// Update rate limiter with response headers
+		c.rateLimiter.UpdateFromHeaders(ratelimiter.ParseRateLimitHeaders(resp))
+
+		// Handle rate limit (429)
+		if resp.StatusCode == http.StatusTooManyRequests {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+
+			// Get reset time from headers, default to exponential backoff
+			info := ratelimiter.ParseRateLimitHeaders(resp)
+			waitTime := time.Duration(2<<attempt) * time.Second // 2, 4, 8, 16...
+			if info != nil && info.Reset > 0 {
+				waitTime = info.Reset + 100*time.Millisecond // Add small buffer
+			}
+
+			slog.Warn("rate limited by beaconcha, waiting before retry",
+				"attempt", attempt+1,
+				"maxRetries", maxRetries,
+				"waitTime", waitTime,
+				"status", resp.StatusCode)
+
+			select {
+			case <-time.After(waitTime):
+				lastErr = fmt.Errorf("rate limited (429): %s", string(body))
+				continue
+			case <-ctx.Done():
+				return nil, nil, ctx.Err()
+			}
+		}
+
+		// Read body for successful or other error responses
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return nil, nil, fmt.Errorf("read response: %w", err)
+		}
+
+		return resp, body, nil
+	}
+
+	return nil, nil, fmt.Errorf("max retries exceeded: %w", lastErr)
 }

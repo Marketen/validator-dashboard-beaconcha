@@ -11,7 +11,10 @@ import (
 // Config holds all configuration values for the application.
 type Config struct {
 	// Server configuration
-	Port string
+	Port               string
+	ServerWriteTimeout time.Duration
+	ServerReadTimeout  time.Duration
+	ServerIdleTimeout  time.Duration
 
 	// Beaconcha API configuration
 	BeaconchainBaseURL   string
@@ -27,10 +30,13 @@ type Config struct {
 func Load() (*Config, error) {
 	cfg := &Config{
 		Port:                 getEnv("PORT", "8080"),
+		ServerWriteTimeout:   getDurationEnv("SERVER_WRITE_TIMEOUT", 60*time.Second),
+		ServerReadTimeout:    getDurationEnv("SERVER_READ_TIMEOUT", 15*time.Second),
+		ServerIdleTimeout:    getDurationEnv("SERVER_IDLE_TIMEOUT", 120*time.Second),
 		BeaconchainBaseURL:   getEnv("BEACONCHAIN_BASE_URL", "https://beaconcha.in"),
 		BeaconchainAPIKey:    getEnv("BEACONCHAIN_API_KEY", ""),
 		BeaconchainRateLimit: getDurationEnv("BEACONCHAIN_RATE_LIMIT", time.Second), // 1 req/sec
-		BeaconchainTimeout:   getDurationEnv("BEACONCHAIN_TIMEOUT", 30*time.Second),
+		BeaconchainTimeout:   getDurationEnv("BEACONCHAIN_TIMEOUT", 60*time.Second),
 		MaxValidatorIDs:      getIntEnv("MAX_VALIDATOR_IDS", 100),
 	}
 

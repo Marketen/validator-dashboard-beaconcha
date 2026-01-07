@@ -52,11 +52,13 @@ func ParseRateLimitHeaders(resp *http.Response) *RateLimitInfo {
 
 // GlobalRateLimiter provides a shared rate limiter for outbound API calls.
 // This ensures we respect the Beaconcha API rate limit of 1 request per second.
+// It uses strict serialization to prevent Cloudflare from triggering protection.
 type GlobalRateLimiter struct {
 	limiter     *rate.Limiter
 	mu          sync.Mutex
 	lastCall    time.Time
 	nextAllowed time.Time // Adaptive delay based on rate limit headers
+	interval    time.Duration
 }
 
 // NewGlobalRateLimiter creates a new rate limiter with the specified interval between requests.
@@ -73,6 +75,7 @@ func NewGlobalRateLimiter(interval time.Duration) *GlobalRateLimiter {
 	return &GlobalRateLimiter{
 		limiter:  limiter,
 		lastCall: time.Now(),
+		interval: interval,
 	}
 }
 
@@ -117,19 +120,45 @@ func (g *GlobalRateLimiter) UpdateFromHeaders(info *RateLimitInfo) {
 	// If no remaining requests, we need to wait for reset
 	if info.Remaining == 0 && info.Reset > 0 {
 		// Record when we can make the next request
-		g.nextAllowed = time.Now().Add(info.Reset)
+		newNextAllowed := time.Now().Add(info.Reset)
+		// Only extend if this is further in the future
+		if newNextAllowed.After(g.nextAllowed) {
+			g.nextAllowed = newNextAllowed
+		}
 	}
 }
 
 // WaitAdaptive waits respecting both the token bucket and any adaptive delay from headers.
+// Uses strict mutex serialization to prevent concurrent requests from slipping through.
 func (g *GlobalRateLimiter) WaitAdaptive(ctx context.Context) error {
+	// Acquire mutex to ensure strict serialization
+	// This prevents multiple goroutines from calculating wait times simultaneously
 	g.mu.Lock()
-	waitUntil := g.nextAllowed
+
+	// Calculate required wait time based on both header-based delay and minimum interval
+	var waitDuration time.Duration
+
+	// Check header-based delay (from 429 responses or remaining=0)
+	if !g.nextAllowed.IsZero() && time.Now().Before(g.nextAllowed) {
+		waitDuration = time.Until(g.nextAllowed)
+	}
+
+	// Also ensure minimum interval since last call
+	timeSinceLast := time.Since(g.lastCall)
+	if timeSinceLast < g.interval {
+		intervalWait := g.interval - timeSinceLast
+		if intervalWait > waitDuration {
+			waitDuration = intervalWait
+		}
+	}
+
+	// Update lastCall NOW before releasing mutex
+	// This reserves our slot even if we haven't made the request yet
+	g.lastCall = time.Now().Add(waitDuration)
 	g.mu.Unlock()
 
-	// If we have a header-based wait time, respect it
-	if !waitUntil.IsZero() && time.Now().Before(waitUntil) {
-		waitDuration := time.Until(waitUntil)
+	// Now wait outside the mutex (allows other goroutines to queue up)
+	if waitDuration > 0 {
 		select {
 		case <-time.After(waitDuration):
 		case <-ctx.Done():
@@ -137,6 +166,6 @@ func (g *GlobalRateLimiter) WaitAdaptive(ctx context.Context) error {
 		}
 	}
 
-	// Also respect the token bucket rate limiter
+	// Also respect the token bucket rate limiter as a backup
 	return g.Wait(ctx)
 }

@@ -6,32 +6,96 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"sync"
+	"sync/atomic"
 
 	"github.com/Marketen/validator-dashboard-beaconcha/internal/beaconcha"
 	"github.com/Marketen/validator-dashboard-beaconcha/internal/models"
 )
 
 // ValidatorService handles validator data aggregation.
+// It uses a FIFO queue to ensure strict request prioritization -
+// each request is fully completed before the next one starts.
 type ValidatorService struct {
 	beaconchainClient *beaconcha.Client
+
+	// Request queue for strict FIFO ordering
+	queueMu     sync.Mutex // Protects queue operations
+	queueHead   uint64     // Next ticket to be served
+	queueTail   uint64     // Next ticket to be issued
+	queueCond   *sync.Cond // Condition variable for waiting
+	activeCount int32      // Number of requests currently being processed (should be 0 or 1)
 }
 
 // NewValidatorService creates a new validator service.
 func NewValidatorService(client *beaconcha.Client) *ValidatorService {
-	return &ValidatorService{
+	s := &ValidatorService{
 		beaconchainClient: client,
 	}
+	s.queueCond = sync.NewCond(&s.queueMu)
+	return s
+}
+
+// acquireQueueSlot gets a ticket and waits until it's our turn.
+// Returns a release function that must be called when done.
+func (s *ValidatorService) acquireQueueSlot(ctx context.Context) (func(), error) {
+	s.queueMu.Lock()
+
+	// Get our ticket number
+	myTicket := s.queueTail
+	s.queueTail++
+
+	slog.Debug("request queued", "ticket", myTicket, "queueHead", s.queueHead)
+
+	// Wait until it's our turn (our ticket matches head) and no one is active
+	for s.queueHead != myTicket || atomic.LoadInt32(&s.activeCount) > 0 {
+		// Check context before waiting
+		select {
+		case <-ctx.Done():
+			s.queueMu.Unlock()
+			return nil, ctx.Err()
+		default:
+		}
+
+		// Wait for signal (releases mutex while waiting)
+		s.queueCond.Wait()
+	}
+
+	// It's our turn - mark as active
+	atomic.StoreInt32(&s.activeCount, 1)
+	s.queueMu.Unlock()
+
+	slog.Debug("request processing", "ticket", myTicket)
+
+	// Return release function
+	return func() {
+		s.queueMu.Lock()
+		s.queueHead++ // Move to next ticket
+		atomic.StoreInt32(&s.activeCount, 0)
+		s.queueCond.Broadcast() // Wake up all waiters to check their turn
+		s.queueMu.Unlock()
+		slog.Debug("request completed", "ticket", myTicket, "nextTicket", myTicket+1)
+	}, nil
 }
 
 // GetValidatorData fetches and aggregates data for the given validator IDs.
+// Requests are processed in strict FIFO order - each request completes all
+// Beaconcha API calls before the next request starts.
 func (s *ValidatorService) GetValidatorData(ctx context.Context, chain string, validatorIds []int, evalRange string) (models.ValidatorResponse, error) {
 	if len(validatorIds) == 0 {
 		return models.ValidatorResponse{}, nil
 	}
 
+	// Acquire queue slot - blocks until it's our turn
+	release, err := s.acquireQueueSlot(ctx)
+	if err != nil {
+		return models.ValidatorResponse{}, fmt.Errorf("queue wait: %w", err)
+	}
+	defer release()
+
 	slog.Debug("fetching validator data", "validators", len(validatorIds), "range", evalRange)
 
-	// Fetch data from Beaconcha
+	// Fetch data from Beaconcha (we have exclusive access now)
 	return s.fetchAndAggregate(ctx, chain, validatorIds, evalRange)
 }
 
